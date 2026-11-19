@@ -18,6 +18,7 @@ import android.provider.DocumentsContract
 import android.provider.DocumentsContract.Document
 import androidx.core.net.toUri
 import com.kitsumed.shizucallrecorder.utils.AppLogger
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import org.json.JSONObject
@@ -44,6 +45,7 @@ internal object RecordingExpiry {
             if (!it.moveToFirst()) return null
             if (it.getString(2) == Document.MIME_TYPE_DIR) return null
             check(!it.isNull(0)) { "Recording size unavailable" }
+            check(!it.isNull(1) && it.getLong(1) > 0) { "Recording modification time unavailable" }
             FileStamp(it.getLong(0), it.getLong(1))
         }
     }
@@ -88,6 +90,8 @@ internal object RecordingExpiry {
             currentCoroutineContext().ensureActive()
             try {
                 cleanOne(context, key.toUri(), now)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 // A revoked grant or unavailable provider may recover on a later run.
                 AppLogger.w("Could not check an expiring recording", e)
