@@ -70,3 +70,13 @@ When this option is enabled, the application will behave as follows:
 
 >[!WARNING]
 > As mentioned earlier, recording may take a few seconds because Shizuku needs to start. If you enable **Start only when recording**, be aware that the audio will **not be recorded immediately** when you press the button as we would first need to wait for Shizuku to start.
+
+## Recording folders and expiry
+
+In **Settings → Recording → File Name Template**, tap **Group by contact or number** and save the template. This adds `{contact_or_number}/` in front of your existing filename. New recordings go into a folder named for the caller, with the phone number as a fallback and an unknown-caller folder for anonymous calls. For one folder per number even for saved contacts, use `{phone_number}/{date}_{direction}`.
+
+**Auto-delete new recordings** starts at **Never**. Choose one day, one week, 30 days, or 90 days. In **Set expiry by contact**, choose a period and check the contacts it applies to. Choosing **Never** for a contact keeps their calls indefinitely. Unchecking a contact returns them to the default. Matching uses Contacts access and the contact associated with the call's number. Unidentified callers use the default.
+
+A recording takes its expiry setting when the call ends. Changing a rule affects future recordings. Each expiring recording gets its own notification, even when ordinary post-call quick actions are off. Tap **Keep** to cancel its expiry, or tap the notification to play it first. Dismissing the notification leaves the expiry in place. Allow the **Post-Call Quick Actions** channel to see these actions.
+
+Cleanup runs periodically, including after reboot. Android can delay it beyond the displayed date. Cleanup needs access to the original recording folder. [Android background job scheduling](https://developer.android.com/reference/android/app/job/JobInfo.Builder#setPeriodic(long))

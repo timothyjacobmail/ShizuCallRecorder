@@ -120,6 +120,8 @@ class AppPreferences(context: Context) {
         AUDIO_CHANNEL_SPLIT("audio_channel_split"),
         AUDIO_CODEC("audio_codec"),
         AUDIO_BITRATE("audio_bitrate"),
+        DEFAULT_RETENTION_DAYS("default_retention_days"),
+        RETENTION_CONTACTS_PREFIX("retention_contacts_"),
         FILE_NAME_TEMPLATE("file_name_template"),
         THEME_MODE("theme_mode"),
         DYNAMIC_COLOR("dynamic_color"),
@@ -237,6 +239,29 @@ class AppPreferences(context: Context) {
     
     /** Sets the user-selected folder URI for storing recordings. */
     fun setRecordingFolderUri(uri: Uri?) = setString(Key.RECORDING_FOLDER_URI, uri?.toString())
+
+    fun getDefaultRetention() = RetentionPeriod.fromDays(getInt(Key.DEFAULT_RETENTION_DAYS))
+
+    fun setDefaultRetention(period: RetentionPeriod) = setInt(Key.DEFAULT_RETENTION_DAYS, period.days)
+
+    private fun retentionContactsKey(period: RetentionPeriod) = Key.RETENTION_CONTACTS_PREFIX.id + period.days
+
+    fun getRetentionContacts(period: RetentionPeriod): Set<String> =
+        prefs.getStringSet(retentionContactsKey(period), emptySet()).orEmpty()
+
+    fun setRetentionContacts(period: RetentionPeriod, contacts: Set<String>) {
+        // Move selected contacts out of other periods in the same preference edit.
+        prefs.edit {
+            for (other in RetentionPeriod.entries) {
+                val updated = if (other == period) contacts else getRetentionContacts(other) - contacts
+                putStringSet(retentionContactsKey(other), updated)
+            }
+        }
+    }
+
+    fun retentionFor(lookupKey: String?): RetentionPeriod =
+        RetentionPeriod.entries.firstOrNull { lookupKey != null && lookupKey in getRetentionContacts(it) }
+            ?: getDefaultRetention()
 
     /** Checks if vibration is enabled for notifications/actions. */
     fun isVibrationEnabled() = getBoolean(Key.VIBRATION_ENABLED, DefaultsValue.VIBRATION_ENABLED)

@@ -31,6 +31,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.coroutines.cancellation.CancellationException
 
 /**
@@ -82,6 +83,9 @@ class RecordingForegroundService : Service() {
 
     /** Scope for service lifecycle operations (binding, etc.) */
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
+    // Final file actions must finish even if onDestroy cancels the binding scope.
+    private var pendingFileActions = 0
 
     // ── Recording session state ────────────────────────────────────────────────────────
 
@@ -321,7 +325,7 @@ class RecordingForegroundService : Service() {
                         val userFriendlyMessage = getString(failure.descriptionResId)
                         AppLogger.w("Recording session was notified of a failure with error: $failure. Showing user-friendly message: $userFriendlyMessage")
                         notificationHelper.showErrorNotification(userFriendlyMessage)
-                        stopRecordingSessionAndService()
+                        serviceScope.launch { stopRecordingSessionAndService() }
                     }
                 }
             )
@@ -351,41 +355,60 @@ class RecordingForegroundService : Service() {
 
         if (activeSession == null) {
             AppLogger.d("No active session, exiting standby state, removing foreground notification and stopping service.")
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
+            if (pendingFileActions > 0) _serviceState.update { RecordingServiceState.Standby(null) }
+            stopIfIdle()
             return
         }
 
         AppLogger.i("Stopping active recording session, removing foreground notification and stopping service...")
         activeSession.release()
 
-        // If the user has enabled post-recording file actions, show a notification with options.
-        if (appPreferences.isPostRecordingFileActionsNotificationEnabled()) {
-            activeSession.currentRecordingUri?.let { filePathUri ->
-                activeSession.initializationMetadata.let { metadata ->
+        _serviceState.update { RecordingServiceState.Standby(null) }
+        val uri = activeSession.currentRecordingUri
+        val metadata = activeSession.initializationMetadata
+        val period = appPreferences.retentionFor(metadata.contactLookupKey)
+        val showActions = appPreferences.isPostRecordingFileActionsNotificationEnabled()
 
-                    // Ensure the file was written and exists
-                    val docFile = DocumentFile.fromSingleUri(applicationContext, filePathUri)
-                    if (docFile != null && docFile.exists() && docFile.length() > 0) {
-                        AppLogger.d("Showing post-recording notification for user actions.")
+        if (uri == null || (!showActions && period.days == 0)) {
+            stopIfIdle()
+            return
+        }
 
-                        notificationHelper.showPostCallNotification(
-                            filePathUri,
-                            metadata
-                        )
+        pendingFileActions++
+        CoroutineScope(Dispatchers.Main.immediate).launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    val expiry = if (period.days > 0) {
+                        RecordingExpiry.enroll(applicationContext, uri, period.days)
+                    } else {
+                        val file = DocumentFile.fromSingleUri(applicationContext, uri)
+                        if (file == null || !file.exists() || file.length() == 0L) return@withContext
+                        null
+                    }
+                    try {
+                        notificationHelper.showPostCallNotification(uri, metadata, expiry)
+                    } catch (e: RuntimeException) {
+                        if (expiry != null) RecordingExpiry.forget(applicationContext, uri, expiry.id)
+                        throw e
                     }
                 }
+            } catch (e: Exception) {
+                AppLogger.w("Could not finalize recording file actions", e)
+                notificationHelper.showErrorNotification(getString(
+                    if (period.days > 0) R.string.retention_schedule_failed else R.string.recording_unexpected_error
+                ))
+            } finally {
+                pendingFileActions--
+                if (_serviceState.value == RecordingServiceState.Standby(null)) stopIfIdle()
             }
         }
+    }
 
-        _serviceState.update {
-            RecordingServiceState.Standby(null)
+    private fun stopIfIdle() {
+        if (pendingFileActions == 0) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
         }
-
-        AppLogger.i("Recording session stopped and resources released. Stopping foreground service.")
-
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf() // Stop the service since the session is over
     }
 
     /**

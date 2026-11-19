@@ -122,7 +122,7 @@
     <string name="permission_notifications_description">Used for recording status and error alerts.</string>
 
     <string name="permission_contacts_label">Contacts</string>
-    <string name="permission_contacts_description">Used to filter known contacts for ignore rules.</string>
+    <string name="permission_contacts_description">Used to identify callers for recording rules, contact folders, and expiry settings.</string>
 
     <string name="permission_phone_state_label">Phone State</string>
     <string name="permission_phone_state_description">Required to detect when a call starts or ends.</string>
@@ -335,4 +335,22 @@
     <string name="recording_shizuku_not_started">Shizuku-Server process is stopped. Please start Shizuku and ensure it is always able to run when the app wants to record audio.</string>
     <string name="recording_shizuku_permission_denied">Please allow the application to use Shizuku. Permission was denied.</string>
     <string name="recording_shizuku_auth_key_missing">Shizuku Intents authentication key is missing. Please enter it in the app settings.</string>
+    <string name="settings_contact_subfolder">Group by contact or number</string>
+    <string name="placeholder_contact_or_number">Caller name, phone number, or Unknown caller</string>
+    <string name="retention_default">Auto-delete new recordings</string>
+    <string name="retention_hint">Each new recording uses the period set when the call ends. Expiring recordings show a Keep action in their notification.</string>
+    <string name="retention_contacts">Set expiry by contact</string>
+    <string name="retention_contacts_permission">Allow Contacts access to choose contacts.</string>
+    <string name="retention_contacts_title">Choose contacts · %1$s</string>
+    <string name="retention_contact_count">%1$s (%2$d)</string>
+    <string name="retention_never">Never</string>
+    <string name="retention_day">After 1 day</string>
+    <string name="retention_week">After 1 week</string>
+    <string name="retention_month">After 30 days</string>
+    <string name="retention_quarter">After 90 days</string>
+    <string name="retention_keep">Keep</string>
+    <string name="retention_kept">Recording kept</string>
+    <string name="retention_keep_failed">Could not keep this recording.</string>
+    <string name="retention_expires">Auto-deletes after %s</string>
+    <string name="retention_schedule_failed">Saved the recording, but could not schedule auto-deletion.</string>
 </resources>

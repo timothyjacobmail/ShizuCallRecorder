@@ -45,6 +45,7 @@ object RecordingFileNameFormatter {
         DATE_SECONDS("{date:seconds}", R.string.placeholder_date_seconds_desc, setOf(CallDetectionMode.PhoneState, CallDetectionMode.InCallService)),
         DIRECTION("{direction}", R.string.placeholder_direction_desc, setOf(CallDetectionMode.PhoneState, CallDetectionMode.InCallService)),
         PHONE_NUMBER("{phone_number}", R.string.placeholder_phone_number_desc, setOf(CallDetectionMode.PhoneState, CallDetectionMode.InCallService)),
+        CONTACT_OR_NUMBER("{contact_or_number}", R.string.placeholder_contact_or_number, setOf(CallDetectionMode.PhoneState, CallDetectionMode.InCallService)),
         CALLER_NAME("{caller_name}", R.string.placeholder_caller_name_desc, setOf(CallDetectionMode.PhoneState, CallDetectionMode.InCallService)),
         CROSS_COUNTRY("{cross_country}", R.string.placeholder_cross_country_desc,setOf(CallDetectionMode.PhoneState, CallDetectionMode.InCallService)),
         PACKAGE_NAME("{package_name}", R.string.placeholder_package_name_desc, setOf(CallDetectionMode.InCallService))
@@ -113,9 +114,19 @@ object RecordingFileNameFormatter {
             .replace(FileNamePlaceholder.CALLER_NAME.tag, callerNameStr)
             .replace(FileNamePlaceholder.CROSS_COUNTRY.tag, crossCountryStr)
             .replace(FileNamePlaceholder.PACKAGE_NAME.tag, packageName)
+            .replace(FileNamePlaceholder.CONTACT_OR_NUMBER.tag, contactFolder(context, metadata))
 
         AppLogger.v( "Formatted base filename: '$baseName' with template '$template'")
         return "$baseName${codec.containerExtension}"
+    }
+
+    private fun contactFolder(context: Context, metadata: EnrichedCallData): String {
+        fun segment(value: String?) = value.orEmpty().map {
+            if (it.isISOControl() || it in "/\\:*?\"<>|") '_' else it
+        }.joinToString("").trim().trim('.').trim()
+        return segment(metadata.callerName).ifEmpty {
+            segment(metadata.getBestNumber()).ifEmpty { context.getString(R.string.post_recording_notification_unknown_caller) }
+        }
     }
 
     /**

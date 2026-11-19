@@ -29,7 +29,8 @@ import androidx.core.app.NotificationCompat
 import com.kitsumed.shizucallrecorder.R
 import com.kitsumed.shizucallrecorder.data.AppPreferences
 import com.kitsumed.shizucallrecorder.data.call.EnrichedCallData
-import com.kitsumed.shizucallrecorder.utils.RecordingFileNameFormatter
+import android.text.format.DateFormat
+import java.util.Date
 import com.kitsumed.shizucallrecorder.ui.theme.Green40
 
 class RecordingNotificationHelper(private val context: Context) {
@@ -230,7 +231,7 @@ class RecordingNotificationHelper(private val context: Context) {
      * @param fileUri The URI of the recorded audio file.
      * @param callMetadata Metadata about the recorded call.
      */
-    fun showPostCallNotification(fileUri: Uri, callMetadata: EnrichedCallData) {
+    internal fun showPostCallNotification(fileUri: Uri, callMetadata: EnrichedCallData, expiry: RecordingExpiry.Ticket?) {
         val manager = context.getSystemService(NotificationManager::class.java)
         val number = callMetadata.getBestNumber()
         val callerText = when {
@@ -255,32 +256,47 @@ class RecordingNotificationHelper(private val context: Context) {
             putExtra(Intent.EXTRA_STREAM, fileUri)
             flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
         }
-        val chooserIntent = Intent.createChooser(shareIntent, null)
+        val chooserIntent = Intent.createChooser(shareIntent, null).apply { identifier = expiry?.id ?: fileUri.toString() }
         val sharePendingIntent = PendingIntent.getActivity(
             context, REQUEST_CODE_SHARE_RECORDING, chooserIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
         // Delete action (Triggers our DeleteDialogConfirmationActivity)
         val deleteIntent = Intent(context, DeleteDialogConfirmationActivity::class.java).apply {
+            data = fileUri
+            identifier = expiry?.id
             putExtra(Intent.EXTRA_STREAM, fileUri)
         }
         val deletePendingIntent = PendingIntent.getActivity(
             context, REQUEST_CODE_DELETE_RECORDING, deleteIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val notification = NotificationCompat.Builder(context, CHANNEL_ID_POST_RECORDING_FILE_ACTIONS)
+        val builder = NotificationCompat.Builder(context, CHANNEL_ID_POST_RECORDING_FILE_ACTIONS)
             .setSmallIcon(R.drawable.ic_audio_file)
             .setLargeIcon(BitmapFactory.decodeResource(context.resources, R.mipmap.ic_launcher))
             .setContentTitle(context.getString(R.string.post_recording_notification_title))
             .setContentText(callerText)
-            .setAutoCancel(true)
-            .addAction(android.R.drawable.ic_media_play, context.getString(R.string.general_play), playPendingIntent)
+            .setAutoCancel(expiry == null)
+            .setContentIntent(playPendingIntent)
+            .setCategory(NotificationCompat.CATEGORY_STATUS)
+
+        if (expiry == null) {
+            builder.addAction(android.R.drawable.ic_media_play, context.getString(R.string.general_play), playPendingIntent)
+        } else {
+            val keep = Intent(context, KeepRecordingReceiver::class.java).apply {
+                data = fileUri
+                identifier = expiry.id
+            }
+            val keepAction = PendingIntent.getBroadcast(context, 0, keep, PendingIntent.FLAG_IMMUTABLE)
+            val date = DateFormat.getMediumDateFormat(context).format(Date(expiry.expiresAt))
+            builder.setSubText(context.getString(R.string.retention_expires, date))
+                .addAction(android.R.drawable.ic_menu_save, context.getString(R.string.retention_keep), keepAction)
+        }
+        builder
             .addAction(android.R.drawable.ic_menu_share, context.getString(R.string.general_share), sharePendingIntent)
             .addAction(android.R.drawable.ic_menu_delete, context.getString(R.string.general_delete), deletePendingIntent)
-            .setCategory(NotificationCompat.CATEGORY_STATUS)
-            .build()
 
-        manager.notify(POST_RECORDING_FILE_ACTIONS_NOTIFICATION_ID, notification)
+        manager.notify(expiry?.id, POST_RECORDING_FILE_ACTIONS_NOTIFICATION_ID, builder.build())
     }
 
     /**

@@ -60,6 +60,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kitsumed.shizucallrecorder.R
+import com.kitsumed.shizucallrecorder.data.RetentionPeriod
 import com.kitsumed.shizucallrecorder.data.AppPreferences
 import com.kitsumed.shizucallrecorder.services.callDetection.CallDetectionMode
 import com.kitsumed.shizucallrecorder.system.PersistentFolderPickerContract
@@ -139,6 +140,7 @@ fun SettingsScreen(
         onSelectFolder = { folderPickerLauncher.launch(null) },
         onOpenContactsIncoming = { contactPickerViewModel.openContactPicker(ContactPickerType.INCOMING) },
         onOpenContactsOutgoing = { contactPickerViewModel.openContactPicker(ContactPickerType.OUTGOING) },
+        onOpenRetentionContacts = { contactPickerViewModel.openContactPicker(ContactPickerType.Retention(it)) },
         onConfirmContacts = { lookupIDs ->
             contactPickerViewModel.confirmContactPicker(lookupIDs)
             // Refresh the screen so the new contact list information is shown immediately after confirming and closing the dialog.
@@ -174,6 +176,7 @@ fun SettingsContent(
     onSelectFolder: () -> Unit,
     onOpenContactsIncoming: () -> Unit,
     onOpenContactsOutgoing: () -> Unit,
+    onOpenRetentionContacts: (RetentionPeriod) -> Unit,
     onConfirmContacts: (Set<String>) -> Unit,
     onDismissContacts: () -> Unit,
     onExportLogs: () -> Unit,
@@ -208,6 +211,7 @@ fun SettingsContent(
                     actions = actions,
                     onSelectFolder = onSelectFolder,
                     onOpenContactsIncoming = onOpenContactsIncoming,
+                    onOpenRetentionContacts = onOpenRetentionContacts,
                     onOpenContactsOutgoing = onOpenContactsOutgoing
                 )
             }
@@ -223,6 +227,7 @@ fun SettingsContent(
     contactPickerState?.let { picker ->
         ContactSelectionDialog(
             title = when (picker.type) {
+                is ContactPickerType.Retention -> stringResource(R.string.retention_contacts_title, stringResource(picker.type.period.label))
                 ContactPickerType.INCOMING -> stringResource(R.string.settings_select_contacts_incoming)
                 ContactPickerType.OUTGOING -> stringResource(R.string.settings_select_contacts_outgoing)
             },
@@ -545,7 +550,8 @@ private fun RecordingSection(
     actions: SettingsActions,
     onSelectFolder: () -> Unit,
     onOpenContactsIncoming: () -> Unit,
-    onOpenContactsOutgoing: () -> Unit
+    onOpenContactsOutgoing: () -> Unit,
+    onOpenRetentionContacts: (RetentionPeriod) -> Unit
 ) {
     val context = LocalContext.current
     
@@ -663,6 +669,51 @@ private fun RecordingSection(
         )
 
         HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), thickness = 0.5.dp)
+
+        val periods = RetentionPeriod.entries.map { OptionItem(it.name, stringResource(it.label)) }
+        val defaultRetention = remember(updateTrigger) { preferences.getDefaultRetention() }
+        M3DropdownField(
+            label = stringResource(R.string.retention_default),
+            selected = periods.first { it.key == defaultRetention.name },
+            options = periods,
+            onOptionSelected = { actions.setDefaultRetention(RetentionPeriod.valueOf(it.key)) },
+            modifier = Modifier.padding(horizontal = 16.dp)
+        )
+        Text(stringResource(R.string.retention_hint), Modifier.padding(horizontal = 16.dp),
+            style = MaterialTheme.typography.bodySmall)
+
+        var showPeriods by remember { mutableStateOf(false) }
+        val canReadContacts = PermissionChecks.hasContactsPermission(context)
+        ListItem(
+            headlineContent = { Text(stringResource(R.string.retention_contacts)) },
+            supportingContent = if (canReadContacts) null else {
+                { Text(stringResource(R.string.retention_contacts_permission)) }
+            },
+            modifier = Modifier.clickable(enabled = canReadContacts) { showPeriods = true },
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+        )
+        if (showPeriods) {
+            AlertDialog(
+                onDismissRequest = { showPeriods = false },
+                title = { Text(stringResource(R.string.retention_contacts)) },
+                text = {
+                    Column {
+                        for (period in RetentionPeriod.entries) {
+                            TextButton(onClick = {
+                                showPeriods = false
+                                onOpenRetentionContacts(period)
+                            }) {
+                                Text(stringResource(R.string.retention_contact_count, stringResource(period.label),
+                                    preferences.getRetentionContacts(period).size))
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showPeriods = false }) { Text(stringResource(R.string.general_cancel)) }
+                }
+            )
+        }
 
         ToggleListItem(
             label = stringResource(R.string.settings_post_recording_notification),
@@ -1273,6 +1324,7 @@ private fun SettingsScreenPreview() {
             override fun setShizukuStartOnRecordEnabled(enabled: Boolean) {}
             override fun setShizukuKeepAliveEnabled(enabled: Boolean) {}
             override fun setShizukuAuthKey(key: String) {}
+            override fun setDefaultRetention(period: RetentionPeriod) {}
             override fun setFileNameTemplate(template: String) {}
             override fun setCallDetectionMode(mode: CallDetectionMode) {}
             override fun setRecordThirdPartyCalls(enabled: Boolean) {}
@@ -1293,6 +1345,7 @@ private fun SettingsScreenPreview() {
             onSelectFolder = {},
             onOpenContactsIncoming = {},
             onOpenContactsOutgoing = {},
+            onOpenRetentionContacts = {},
             onConfirmContacts = {},
             onDismissContacts = {},
             onExportLogs = {}

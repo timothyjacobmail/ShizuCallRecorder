@@ -116,6 +116,12 @@ fun FileNameFormatDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
+                val folderPrefix = RecordingFileNameFormatter.FileNamePlaceholder.CONTACT_OR_NUMBER.tag + "/"
+                TextButton(
+                    onClick = { text = folderPrefix + text.ifBlank { AppPreferences.DefaultsValue.FILE_NAME_TEMPLATE } },
+                    enabled = !text.startsWith(folderPrefix)
+                ) { Text(stringResource(R.string.settings_contact_subfolder)) }
+
                 Text(
                     text = stringResource(R.string.settings_file_name_template_placeholders, stringResource(activeMode.titleResId)),
                     style = MaterialTheme.typography.labelMedium,

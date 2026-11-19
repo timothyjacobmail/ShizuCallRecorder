@@ -13,6 +13,7 @@ import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.os.LocaleListCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.kitsumed.shizucallrecorder.data.RetentionPeriod
 import com.kitsumed.shizucallrecorder.data.AppPreferences
 import com.kitsumed.shizucallrecorder.data.recording.RecordingCodec
 import com.kitsumed.shizucallrecorder.data.recording.RecordingSource
@@ -74,6 +75,7 @@ interface SettingsActions {
     fun setShizukuStartOnRecordEnabled(enabled: Boolean)
     fun setShizukuKeepAliveEnabled(enabled: Boolean)
     fun setShizukuAuthKey(key: String)
+    fun setDefaultRetention(period: RetentionPeriod)
     fun setFileNameTemplate(template: String)
     fun setCallDetectionMode(mode: CallDetectionMode)
     fun setRecordThirdPartyCalls(enabled: Boolean)
@@ -415,6 +417,11 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             AppLogger.exportReport(appContext, uri)
         }
+    }
+
+    override fun setDefaultRetention(period: RetentionPeriod) {
+        preferences.setDefaultRetention(period)
+        refresh()
     }
 
     /**

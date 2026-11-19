@@ -102,6 +102,7 @@ android {
         sourceCompatibility =  JavaVersion.VERSION_17
         targetCompatibility =  JavaVersion.VERSION_17
     }
+    testOptions.unitTests.isIncludeAndroidResources = true
     buildFeatures {
         compose = true
         aidl = true
@@ -166,6 +167,9 @@ aboutLibraries {
 }
 
 dependencies {
+    testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
+
     // AndroidX Core & Lifecycle
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.documentfile)

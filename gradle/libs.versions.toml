@@ -41,6 +41,10 @@ androidx-compose-ui-tooling = { group = "androidx.compose.ui", name = "ui-toolin
 androidx-compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
 androidx-compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
 
+# Local Android regression tests
+junit = { module = "junit:junit", version = "4.13.2" }
+robolectric = { module = "org.robolectric:robolectric", version = "4.14.1" }
+
 # Shizuku
 shizukuApi = { module = "dev.rikka.shizuku:api", version.ref = "shizuku-api" }
 shizukuProvider = { module = "dev.rikka.shizuku:provider", version.ref = "shizuku-provider" }

@@ -44,7 +44,9 @@ class DeleteDialogConfirmationActivity : AppCompatActivity() {
                         Toast.makeText(this, getString(R.string.general_deleted), Toast.LENGTH_SHORT).show()
                         // Remove the notifications from the notification tray since file no longer exists
                         val manager = getSystemService(android.app.NotificationManager::class.java)
-                        manager.cancel(RecordingNotificationHelper.POST_RECORDING_FILE_ACTIONS_NOTIFICATION_ID)
+                        val id = intent.identifier
+                        if (id != null) RecordingExpiry.forget(this, fileUri, id)
+                        manager.cancel(id, RecordingNotificationHelper.POST_RECORDING_FILE_ACTIONS_NOTIFICATION_ID)
                     }
                 } catch (e: Exception) {
                     AppLogger.e( "Failed to delete file: $fileUri", e)

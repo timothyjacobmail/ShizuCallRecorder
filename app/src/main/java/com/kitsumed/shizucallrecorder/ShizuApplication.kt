@@ -9,6 +9,10 @@
 package com.kitsumed.shizucallrecorder
 
 import android.app.Application
+import com.kitsumed.shizucallrecorder.services.recording.RecordingExpiry
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import com.kitsumed.shizucallrecorder.services.callDetection.CallDetectionOrchestrator
 import com.kitsumed.shizucallrecorder.utils.AppLogger
 
@@ -21,5 +25,12 @@ class ShizuApplication : Application() {
         AppLogger.init(applicationContext)
         // Sync configurations down to PackageManager mapping immediately on launch
         CallDetectionOrchestrator(applicationContext).syncComponents()
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                RecordingExpiry.restoreSchedule(applicationContext)
+            } catch (e: RuntimeException) {
+                AppLogger.w("Could not restore recording expiry job", e)
+            }
+        }
     }
 }

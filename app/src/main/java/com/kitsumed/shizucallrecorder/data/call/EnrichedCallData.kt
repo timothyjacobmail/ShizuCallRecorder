@@ -26,6 +26,7 @@ import kotlinx.parcelize.Parcelize
  * @param direction Whether the call is incoming or outgoing.
  * @param isCrossCountry Whether the call is cross-country.
  * @param callerName The caller/contact name associated with the phone number in the user contacts, then fallback to Telecom/CallerID name, if available.
+ * @param contactLookupKey The address book lookup key used for contact-specific expiry rules.
  * @param isCallAudioVoIpBased A boolean indicating whether the call audio is VoIP-based or not. This can be used to determine if special handling is needed for VoIP calls.
  */
 @Parcelize
@@ -36,7 +37,8 @@ data class EnrichedCallData(
     val isCrossCountry: Boolean = false,
     val callerName: String? = null,
     val packageName: String? = null,
-    val isCallAudioVoIpBased: Boolean = false
+    val isCallAudioVoIpBased: Boolean = false,
+    val contactLookupKey: String? = null
 ) : Parcelable {
 
     /**
@@ -70,6 +72,8 @@ data class EnrichedCallData(
                     )
                 }
 
+                val contact = lookupContact(context, raw)
+                val callerName = base.osProvidedCallerName?.takeIf { it.isNotBlank() } ?: contact?.first
                 val phoneNumberManager = PhoneNumberManager.getInstance(context)
                 val parsedNumber = phoneNumberManager.parsePhoneNumber(raw)
                 // If parsing failed
@@ -79,7 +83,8 @@ data class EnrichedCallData(
                         normalisedPhoneNumber = PhoneNumberManager.normalisePhoneNumber(raw), // Safety normalizing, the number should already have been.
                         direction = base.direction,
                         isCrossCountry = true, // If we can't parse the number, we should assume it's cross-country to be safe, since we don't know where it's from.
-                        callerName = base.osProvidedCallerName,
+                        callerName = callerName,
+                        contactLookupKey = contact?.second,
                         packageName = base.packageName,
                         isCallAudioVoIpBased = base.isCallAudioVoIpBased,
                     )
@@ -88,17 +93,6 @@ data class EnrichedCallData(
                 // Perform Enrichment & Fetch missing data when possible
                 val standardized = phoneNumberManager.formatToE164(parsedNumber)
                 val crossCountry = phoneNumberManager.isNumberFromDifferentCountry(parsedNumber)
-                var callerName = base.osProvidedCallerName
-                // If the raw call data did not provide us with a contact name, we attempt a lookup ourselves.
-                if (base.osProvidedCallerName.isNullOrBlank()) {
-                    callerName = getContactName(context, raw)
-                    if (callerName != null) {
-                        AppLogger.v( "Found contact name '$callerName' for number '$raw'")
-                    } else {
-                        AppLogger.v( "No contact name found for number '$raw'")
-                    }
-                }
-
                 AppLogger.v( "Enriched metadata for number: raw='$raw', standardized='$standardized', crossCountry=$crossCountry, callerName='$callerName'")
                 return@withContext EnrichedCallData(
                     normalisedPhoneNumber = PhoneNumberManager.normalisePhoneNumber(raw), // Safety normalizing, the number should already have been.
@@ -106,33 +100,24 @@ data class EnrichedCallData(
                     direction = base.direction,
                     isCrossCountry = crossCountry,
                     callerName = callerName,
+                    contactLookupKey = contact?.second,
                     packageName = base.packageName,
                     isCallAudioVoIpBased = base.isCallAudioVoIpBased,
                 )
             }
 
-        /**
-         * Looks up the contact name associated with a given phone number, if the app has permission to read contacts.
-         *
-         * @param context The context used to access the ContentResolver and check permissions.
-         * @param phoneNumber The phone number to look up, in any format (e.g. raw or E.164).
-         * @return The contact name if found and permission is granted, or null otherwise.
-         */
-        private fun getContactName(context: Context, phoneNumber: String): String? {
+        private fun lookupContact(context: Context, phoneNumber: String): Pair<String?, String?>? {
             if (!PermissionChecks.hasContactsPermission(context)) return null
-
-            val lookupUri = Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI, Uri.encode(phoneNumber))
-            val projection = arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME)
-
-            return context.contentResolver.query(lookupUri, projection, null, null, null)?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                    val nameIndex = cursor.getColumnIndex(ContactsContract.PhoneLookup.DISPLAY_NAME)
-                    if (nameIndex != -1) {
-                        cursor.getString(nameIndex)
-                    } else null
-                } else null
+            val uri = Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI, Uri.encode(phoneNumber))
+            val columns = arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME, ContactsContract.PhoneLookup.LOOKUP_KEY)
+            return try {
+                context.contentResolver.query(uri, columns, null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) cursor.getString(0) to cursor.getString(1) else null
+                }
+            } catch (e: RuntimeException) {
+                AppLogger.w("Contact lookup unavailable", e)
+                null
             }
         }
-
     }
 }

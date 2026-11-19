@@ -12,6 +12,7 @@ import android.app.Application
 import android.provider.ContactsContract
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.kitsumed.shizucallrecorder.data.RetentionPeriod
 import com.kitsumed.shizucallrecorder.data.AppPreferences
 import com.kitsumed.shizucallrecorder.system.permissions.PermissionChecks
 import com.kitsumed.shizucallrecorder.ui.common.ContactSelectionDialog
@@ -24,12 +25,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * Whether the contact-filter rule applies to incoming or outgoing calls.
- * Used when opening the contact picker so the app knows which list to update.
+ * The call filter or recording expiry period being edited in the contact picker.
  */
-enum class ContactPickerType {
-    INCOMING,
-    OUTGOING
+sealed interface ContactPickerType {
+    data object INCOMING : ContactPickerType
+    data object OUTGOING : ContactPickerType
+    data class Retention(val period: RetentionPeriod) : ContactPickerType
 }
 
 /**
@@ -111,6 +112,7 @@ class ContactPickerViewModel(application: Application) : AndroidViewModel(applic
 
             // Fetch raw saved keys
             val rawSelectedKeys = when (type) {
+                is ContactPickerType.Retention -> preferences.getRetentionContacts(type.period)
                 ContactPickerType.INCOMING -> preferences.getIgnoredContactsIncoming()
                 ContactPickerType.OUTGOING -> preferences.getIgnoredContactsOutgoing()
             }
@@ -137,6 +139,7 @@ class ContactPickerViewModel(application: Application) : AndroidViewModel(applic
     fun confirmContactPicker(contactsLookupId: Set<String>) {
         val currentType = _contactPickerState.value?.type
         when (currentType) {
+            is ContactPickerType.Retention -> preferences.setRetentionContacts(currentType.period, contactsLookupId)
             ContactPickerType.INCOMING -> preferences.setIgnoredContactsIncoming(contactsLookupId)
             ContactPickerType.OUTGOING -> preferences.setIgnoredContactsOutgoing(contactsLookupId)
             null -> throw IllegalStateException("Contact picker state is null when trying to confirm selection. This should never happen.")
