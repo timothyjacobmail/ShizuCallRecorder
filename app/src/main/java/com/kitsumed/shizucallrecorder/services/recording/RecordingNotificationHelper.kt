@@ -46,6 +46,68 @@ class RecordingNotificationHelper(private val context: Context) {
         private const val REQUEST_CODE_OPEN_RECORDING = 1001
         private const val REQUEST_CODE_SHARE_RECORDING = 1002
         private const val REQUEST_CODE_DELETE_RECORDING = 1003
+
+        private fun trashIntent(context: Context, fileUri: Uri, tag: String?) =
+            Intent(context, TrashRecordingReceiver::class.java).apply {
+                data = fileUri
+                identifier = tag
+            }
+
+        private fun confirmationIntent(context: Context, fileUri: Uri, tag: String?) =
+            Intent(context, DeleteDialogConfirmationActivity::class.java).apply {
+                data = fileUri
+                identifier = tag
+            }
+
+        internal fun cancelPostCallNotification(context: Context, fileUri: Uri, tag: String?) {
+            val manager = context.getSystemService(NotificationManager::class.java)
+            if (tag != null || currentPostCallNotification(context, fileUri, null) != null) {
+                manager.cancel(tag, POST_RECORDING_FILE_ACTIONS_NOTIFICATION_ID)
+            }
+        }
+
+        private fun currentPostCallNotification(context: Context, fileUri: Uri, tag: String?): Notification? {
+            val manager = context.getSystemService(NotificationManager::class.java)
+            val flags = PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_NO_CREATE
+            val broadcast = PendingIntent.getBroadcast(context, REQUEST_CODE_DELETE_RECORDING,
+                trashIntent(context, fileUri, tag), flags)
+            val confirmation = PendingIntent.getActivity(context, REQUEST_CODE_DELETE_RECORDING,
+                confirmationIntent(context, fileUri, tag), flags)
+            return manager.activeNotifications.firstOrNull { item ->
+                item.id == POST_RECORDING_FILE_ACTIONS_NOTIFICATION_ID && item.tag == tag &&
+                    item.notification.actions.orEmpty().any {
+                        it.actionIntent == broadcast || it.actionIntent == confirmation
+                    }
+            }?.notification
+        }
+
+        internal fun offerTrashConfirmation(context: Context, fileUri: Uri, tag: String?) {
+            val notification = currentPostCallNotification(context, fileUri, tag) ?: return
+            val direct = PendingIntent.getBroadcast(context, REQUEST_CODE_DELETE_RECORDING,
+                trashIntent(context, fileUri, tag), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_NO_CREATE)
+            val confirmation = PendingIntent.getActivity(context, REQUEST_CODE_DELETE_RECORDING,
+                confirmationIntent(context, fileUri, tag), PendingIntent.FLAG_IMMUTABLE)
+            val actionBuilder = Notification.Action.Builder(
+                android.graphics.drawable.Icon.createWithResource(context, android.R.drawable.ic_menu_delete),
+                context.getString(R.string.recording_confirm_trash_action), confirmation
+            )
+            if (Build.VERSION.SDK_INT >= 31) actionBuilder.setAuthenticationRequired(true)
+            val action = actionBuilder.build()
+            val updated = Notification.Builder.recoverBuilder(context, notification)
+                .setActions(*notification.actions.map { if (it.actionIntent == direct) action else it }.toTypedArray())
+                .setPublicVersion(redactedPostCallNotification(context))
+                .setOnlyAlertOnce(true)
+                .build()
+            context.getSystemService(NotificationManager::class.java)
+                .notify(tag, POST_RECORDING_FILE_ACTIONS_NOTIFICATION_ID, updated)
+        }
+
+        private fun redactedPostCallNotification(context: Context, trash: NotificationCompat.Action? = null): Notification =
+            NotificationCompat.Builder(context, CHANNEL_ID_POST_RECORDING_FILE_ACTIONS)
+                .setSmallIcon(R.drawable.ic_audio_file)
+                .setContentTitle(context.getString(R.string.post_recording_notification_title))
+                .apply { if (trash != null) addAction(trash) }
+                .build()
     }
 
     /**
@@ -261,21 +323,21 @@ class RecordingNotificationHelper(private val context: Context) {
             context, REQUEST_CODE_SHARE_RECORDING, chooserIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        // Delete action (Triggers our DeleteDialogConfirmationActivity)
-        val deleteIntent = Intent(context, DeleteDialogConfirmationActivity::class.java).apply {
-            data = fileUri
-            identifier = expiry?.id
-            putExtra(Intent.EXTRA_STREAM, fileUri)
-        }
-        val deletePendingIntent = PendingIntent.getActivity(
-            context, REQUEST_CODE_DELETE_RECORDING, deleteIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        val trashPendingIntent = PendingIntent.getBroadcast(
+            context, REQUEST_CODE_DELETE_RECORDING, trashIntent(context, fileUri, expiry?.id),
+            PendingIntent.FLAG_IMMUTABLE
         )
+        val trashAction = NotificationCompat.Action.Builder(
+            android.R.drawable.ic_menu_delete, context.getString(R.string.recording_recycle_action), trashPendingIntent
+        ).setAuthenticationRequired(false).build()
 
         val builder = NotificationCompat.Builder(context, CHANNEL_ID_POST_RECORDING_FILE_ACTIONS)
             .setSmallIcon(R.drawable.ic_audio_file)
             .setLargeIcon(BitmapFactory.decodeResource(context.resources, R.mipmap.ic_launcher))
             .setContentTitle(context.getString(R.string.post_recording_notification_title))
             .setContentText(callerText)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setPublicVersion(redactedPostCallNotification(context, trashAction))
             .setAutoCancel(expiry == null)
             .setContentIntent(playPendingIntent)
             .setCategory(NotificationCompat.CATEGORY_STATUS)
@@ -294,7 +356,7 @@ class RecordingNotificationHelper(private val context: Context) {
         }
         builder
             .addAction(android.R.drawable.ic_menu_share, context.getString(R.string.general_share), sharePendingIntent)
-            .addAction(android.R.drawable.ic_menu_delete, context.getString(R.string.recording_recycle_action), deletePendingIntent)
+            .addAction(trashAction)
 
         manager.notify(expiry?.id, POST_RECORDING_FILE_ACTIONS_NOTIFICATION_ID, builder.build())
     }

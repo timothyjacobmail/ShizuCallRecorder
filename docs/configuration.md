@@ -81,4 +81,4 @@ A recording takes its expiry setting when the call ends. Changing a rule affects
 
 Cleanup runs periodically, including after reboot. Android can delay it beyond the displayed date. Cleanup needs access to the original recording folder. [Android background job scheduling](https://developer.android.com/reference/android/app/job/JobInfo.Builder#setPeriodic(long))
 
-The post-call **Move to trash** action requests Android's system trash. Expiry moves a recording to system trash when Android grants write access to its media entry. Recordings Android cannot trash stay in the recording folder. Android controls recovery and how long files stay in its trash.
+The post-call **Move to trash** action can run from the lock screen when the **Post-Call Quick Actions** channel and Android allow notification actions there. For recordings that require separate system consent, the notification offers **Confirm trash** after unlocking. Expiry moves a recording to system trash when Android grants write access to its media entry. Recordings Android cannot trash stay in the recording folder. Android controls recovery and how long files stay in its trash.

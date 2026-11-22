@@ -94,8 +94,7 @@ internal object RecordingExpiry {
     @Synchronized
     fun onRecycled(context: Context, uri: Uri, notificationId: String?) {
         if (notificationId != null) forget(context, uri, notificationId)
-        context.getSystemService(NotificationManager::class.java)
-            .cancel(notificationId, RecordingNotificationHelper.POST_RECORDING_FILE_ACTIONS_NOTIFICATION_ID)
+        RecordingNotificationHelper.cancelPostCallNotification(context, uri, notificationId)
     }
 
     suspend fun clean(context: Context, now: Long = System.currentTimeMillis()) {

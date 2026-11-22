@@ -71,6 +71,7 @@
             android:permission="android.permission.BIND_JOB_SERVICE"
             android:exported="true" />
         <receiver android:name=".services.recording.KeepRecordingReceiver" android:exported="false" />
+        <receiver android:name=".services.recording.TrashRecordingReceiver" android:exported="false" />
 
         <!-- Activity to show the user a confirmation dialog before deleting a recording -->
         <activity

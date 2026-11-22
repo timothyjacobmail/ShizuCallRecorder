@@ -355,6 +355,8 @@
     <string name="retention_schedule_failed">Saved the recording, but could not schedule auto-deletion.</string>
     <string name="placeholder_contact_label">Alphabetically first contact label (empty if none)</string>
     <string name="recording_recycle_action">Move to trash</string>
+    <string name="recording_confirm_trash_action">Confirm trash</string>
+    <string name="recording_trash_requires_confirmation">Unlock and tap Confirm trash to move this recording.</string>
     <string name="recording_recycled">Recording moved to trash</string>
     <string name="recording_recycle_failed">Android could not move this recording to trash. The file was left in place.</string>
 </resources>

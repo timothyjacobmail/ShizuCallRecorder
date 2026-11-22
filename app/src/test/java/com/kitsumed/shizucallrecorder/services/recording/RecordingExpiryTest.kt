@@ -9,6 +9,7 @@
 package com.kitsumed.shizucallrecorder.services.recording
 
 import android.app.Application
+import android.app.Notification
 import android.app.NotificationManager
 import android.app.job.JobScheduler
 import android.content.ContentProvider
@@ -144,6 +145,41 @@ class RecordingExpiryTest {
             assertEquals(uri, shadowOf(notification.contentIntent).savedIntent.data)
         }
         assertFalse(RecordingExpiry.forget(context, first, other.id))
+    }
+
+    @Test fun trashActionTargetsTheRecordingAndOffersConsentOnlyAfterRequired() {
+        val helper = RecordingNotificationHelper(context)
+        helper.createNotificationChannels()
+        val uri = recording("lock-screen")
+        val expiry = RecordingExpiry.enroll(context, uri, 7)
+        val manager = context.getSystemService(NotificationManager::class.java)
+        helper.showPostCallNotification(uri, caller, expiry)
+
+        val original = manager.activeNotifications.single().notification
+        val trash = original.actions.single { it.title == context.getString(R.string.recording_recycle_action) }
+        assertTrue(trash.actionIntent.isBroadcast)
+        assertFalse(trash.isAuthenticationRequired)
+        val intent = shadowOf(trash.actionIntent).savedIntent
+        assertEquals(uri, intent.data)
+        assertEquals(expiry.id, intent.identifier)
+        assertEquals(TrashRecordingReceiver::class.java.name, intent.component?.className)
+        val publicVersion = requireNotNull(original.publicVersion)
+        assertEquals(trash.actionIntent, publicVersion.actions.single().actionIntent)
+        assertNull(publicVersion.extras.getCharSequence(Notification.EXTRA_TEXT))
+        assertNull(publicVersion.contentIntent)
+
+        RecordingNotificationHelper.offerTrashConfirmation(context, uri, expiry.id)
+        val updated = manager.activeNotifications.single().notification
+        val confirm = updated.actions.single { it.title == context.getString(R.string.recording_confirm_trash_action) }
+        assertTrue(confirm.actionIntent.isActivity)
+        assertTrue(confirm.isAuthenticationRequired)
+        assertEquals(uri, shadowOf(confirm.actionIntent).savedIntent.data)
+        assertTrue(updated.actions.any { it.title == context.getString(R.string.retention_keep) })
+        assertTrue(updated.publicVersion.actions.isNullOrEmpty())
+
+        RecordingExpiry.recycle(context, uri, expiry.id)
+        assertTrue(manager.activeNotifications.isEmpty())
+        assertEquals(500L, provider.trashed[uri])
     }
 
     private class RecordingProvider : ContentProvider() {
