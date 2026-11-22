@@ -353,4 +353,8 @@
     <string name="retention_keep_failed">Could not keep this recording.</string>
     <string name="retention_expires">Auto-deletes after %s</string>
     <string name="retention_schedule_failed">Saved the recording, but could not schedule auto-deletion.</string>
+    <string name="placeholder_contact_label">Alphabetically first contact label (empty if none)</string>
+    <string name="recording_recycle_action">Move to trash</string>
+    <string name="recording_recycled">Recording moved to trash</string>
+    <string name="recording_recycle_failed">Android could not move this recording to trash. The file was left in place.</string>
 </resources>

@@ -14,10 +14,10 @@ import android.app.job.JobScheduler
 import android.content.ComponentName
 import android.content.Context
 import android.net.Uri
-import android.provider.DocumentsContract
 import android.provider.DocumentsContract.Document
 import androidx.core.net.toUri
 import com.kitsumed.shizucallrecorder.utils.AppLogger
+import com.kitsumed.shizucallrecorder.system.storage.RecordingRecycleBin
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -85,6 +85,19 @@ internal object RecordingExpiry {
         return prefs.edit().remove(uri.toString()).commit()
     }
 
+    @Synchronized
+    fun recycle(context: Context, uri: Uri, notificationId: String?, mediaUri: Uri = RecordingRecycleBin.mediaUri(context, uri)) {
+        RecordingRecycleBin.move(context, mediaUri)
+        onRecycled(context, uri, notificationId)
+    }
+
+    @Synchronized
+    fun onRecycled(context: Context, uri: Uri, notificationId: String?) {
+        if (notificationId != null) forget(context, uri, notificationId)
+        context.getSystemService(NotificationManager::class.java)
+            .cancel(notificationId, RecordingNotificationHelper.POST_RECORDING_FILE_ACTIONS_NOTIFICATION_ID)
+    }
+
     suspend fun clean(context: Context, now: Long = System.currentTimeMillis()) {
         for (key in queue(context).all.keys) {
             currentCoroutineContext().ensureActive()
@@ -107,13 +120,21 @@ internal object RecordingExpiry {
     private fun cleanOne(context: Context, uri: Uri, now: Long) {
         val entry = queue(context).getString(uri.toString(), null)?.let(::JSONObject) ?: return
         if (entry.getLong("expiresAt") > now) return
-        try {
-            val original = FileStamp(entry.getLong("bytes"), entry.getLong("modified"))
-            if (stamp(context, uri) == original && !DocumentsContract.deleteDocument(context.contentResolver, uri)) return
+        val current = try {
+            stamp(context, uri)
         } catch (_: FileNotFoundException) {
-            // The user already removed the document.
+            null
+        } catch (e: IllegalArgumentException) {
+            // Some tree providers wrap a missing document during URI validation.
+            if (e.cause !is FileNotFoundException) throw e
+            null
         }
         val id = entry.getString("id")
+        val original = FileStamp(entry.getLong("bytes"), entry.getLong("modified"))
+        if (current == original) {
+            recycle(context, uri, id)
+            return
+        }
         forget(context, uri, id)
         context.getSystemService(NotificationManager::class.java)
             .cancel(id, RecordingNotificationHelper.POST_RECORDING_FILE_ACTIONS_NOTIFICATION_ID)

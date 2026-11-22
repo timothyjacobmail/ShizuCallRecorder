@@ -8,57 +8,64 @@
 
 package com.kitsumed.shizucallrecorder.services.recording
 
+import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.IntentCompat
-import androidx.documentfile.provider.DocumentFile
+import androidx.lifecycle.lifecycleScope
 import com.kitsumed.shizucallrecorder.R
+import com.kitsumed.shizucallrecorder.system.storage.RecordingRecycleBin
 import com.kitsumed.shizucallrecorder.utils.AppLogger
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
-/**
- * This is a simple activity that shows a confirmation dialog to the user before deleting a recording file.
- */
+/** Requests Android's media trash for a saved recording. */
 class DeleteDialogConfirmationActivity : AppCompatActivity() {
+    private val recordingUri: Uri?
+        get() = intent.data ?: IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
+
+    private val trashRequest = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
+        if (result.resultCode != Activity.RESULT_OK) {
+            finish()
+            return@registerForActivityResult
+        }
+        lifecycleScope.launch {
+            withContext(Dispatchers.IO) {
+                recordingUri?.let { RecordingExpiry.onRecycled(applicationContext, it, intent.identifier) }
+            }
+            done(R.string.recording_recycled)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // We do NOT call setContent() here, and we define a transparent theme (dialog) in the manifest for this activity.
+        val uri = recordingUri ?: return finish()
+        if (savedInstanceState != null) return
 
-        val fileUri: Uri? = IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
-        if (fileUri == null) {
-            finish()
-            return
-        }
-
-        AlertDialog.Builder(this)
-            .setTitle(getString(R.string.delete_recording_confirmation_title))
-            .setMessage(getString(R.string.delete_recording_confirmation_message))
-            .setPositiveButton(getString(R.string.general_delete)) { dialog, _ ->
-                try {
-                    val deleted = DocumentFile.fromSingleUri(this, fileUri)?.delete() == true
-                    if (deleted) {
-                        Toast.makeText(this, getString(R.string.general_deleted), Toast.LENGTH_SHORT).show()
-                        // Remove the notifications from the notification tray since file no longer exists
-                        val manager = getSystemService(android.app.NotificationManager::class.java)
-                        val id = intent.identifier
-                        if (id != null) RecordingExpiry.forget(this, fileUri, id)
-                        manager.cancel(id, RecordingNotificationHelper.POST_RECORDING_FILE_ACTIONS_NOTIFICATION_ID)
-                    }
-                } catch (e: Exception) {
-                    AppLogger.e( "Failed to delete file: $fileUri", e)
-                    Toast.makeText(this, getString(R.string.delete_recording_confirmation_failed), Toast.LENGTH_LONG).show()
+        lifecycleScope.launch {
+            try {
+                val request = withContext(Dispatchers.IO) {
+                    RecordingRecycleBin.request(applicationContext, uri)
                 }
-                dialog.dismiss()
+                trashRequest.launch(IntentSenderRequest.Builder(request.intentSender).build())
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                AppLogger.w("Could not request Android media trash", e)
+                done(R.string.recording_recycle_failed)
             }
-            .setNegativeButton(getString(R.string.general_cancel)) { dialog, _ ->
-                dialog.dismiss()
-            }
-            .setOnDismissListener {
-                finish()
-            }.show()
+        }
+    }
+
+    private fun done(message: Int) {
+        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+        finish()
     }
 }

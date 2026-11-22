@@ -74,7 +74,7 @@ class AppPreferences(context: Context) {
         val AUDIO_BITRATE = RecordingCodec.OPUS.defaultBitRate
 
         // --- File Naming ---
-        const val FILE_NAME_TEMPLATE = "{date}_{direction}_{phone_number}"
+        const val FILE_NAME_TEMPLATE = "{contact_label}/{contact_or_number}/{date}_{direction}_{phone_number}"
 
         // --- UI & Appearance ---
         val THEME_MODE = ThemeMode.SYSTEM
@@ -123,6 +123,7 @@ class AppPreferences(context: Context) {
         DEFAULT_RETENTION_DAYS("default_retention_days"),
         RETENTION_CONTACTS_PREFIX("retention_contacts_"),
         FILE_NAME_TEMPLATE("file_name_template"),
+        FILE_NAME_TEMPLATE_CUSTOMIZED("file_name_template_customized"),
         THEME_MODE("theme_mode"),
         DYNAMIC_COLOR("dynamic_color"),
         SHOW_TOASTS("show_toasts"),
@@ -433,10 +434,18 @@ class AppPreferences(context: Context) {
     // -------- File Naming --------
 
     /** Gets the user configured file name template. */
-    fun getFileNameTemplate() = getString(Key.FILE_NAME_TEMPLATE, DefaultsValue.FILE_NAME_TEMPLATE) ?: DefaultsValue.FILE_NAME_TEMPLATE
+    fun getFileNameTemplate(): String = when (val saved = getString(Key.FILE_NAME_TEMPLATE)) {
+        null -> DefaultsValue.FILE_NAME_TEMPLATE
+        "{date}_{direction}_{phone_number}", "{contact_or_number}/{date}_{direction}_{phone_number}" ->
+            if (getBoolean(Key.FILE_NAME_TEMPLATE_CUSTOMIZED)) saved else DefaultsValue.FILE_NAME_TEMPLATE
+        else -> saved
+    }
 
     /** Sets the user configured file name template. */
-    fun setFileNameTemplate(template: String) = setString(Key.FILE_NAME_TEMPLATE, template)
+    fun setFileNameTemplate(template: String) = prefs.edit {
+        putString(Key.FILE_NAME_TEMPLATE.id, template)
+        putBoolean(Key.FILE_NAME_TEMPLATE_CUSTOMIZED.id, true)
+    }
 
     // -------- UI & Appearance --------
 

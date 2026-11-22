@@ -17,8 +17,6 @@ import android.content.Context
 import android.content.pm.ProviderInfo
 import android.database.MatrixCursor
 import android.net.Uri
-import android.os.Bundle
-import android.provider.DocumentsContract
 import com.kitsumed.shizucallrecorder.R
 import com.kitsumed.shizucallrecorder.data.AppPreferences
 import com.kitsumed.shizucallrecorder.data.RetentionPeriod
@@ -46,12 +44,12 @@ class RecordingExpiryTest {
 
     @Before fun setUp() {
         context = RuntimeEnvironment.getApplication()
-        provider.attachInfo(context, ProviderInfo().apply { authority = "test.recordings" })
-        ShadowContentResolver.registerProviderInternal("test.recordings", provider)
+        provider.attachInfo(context, ProviderInfo().apply { authority = "media" })
+        ShadowContentResolver.registerProviderInternal("media", provider)
     }
 
     private fun recording(name: String): Uri =
-        DocumentsContract.buildDocumentUri("test.recordings", name).also { provider.sizes[it] = 500L }
+        Uri.parse("content://media/external_primary/audio/media/$name").also { provider.sizes[it] = 500L }
 
     @Test fun contactOverridesMoveBetweenPeriodsAndCanReturnToDefault() {
         val prefs = AppPreferences(context)
@@ -77,7 +75,7 @@ class RecordingExpiryTest {
             folder(caller.copy(normalisedPhoneNumber = "")))
     }
 
-    @Test fun onlyUnkeptUnmodifiedDueRecordingsAreDeleted() = runBlocking {
+    @Test fun onlyUnkeptUnmodifiedDueRecordingsAreRecycled() = runBlocking {
         val due = recording("due")
         val kept = recording("kept")
         val replaced = recording("replaced")
@@ -96,6 +94,30 @@ class RecordingExpiryTest {
         RecordingExpiry.clean(context, Long.MAX_VALUE)
         RecordingExpiry.clean(context, Long.MAX_VALUE)
         assertEquals(setOf(kept, replaced, unrelated), provider.sizes.keys)
+        assertEquals(mapOf(due to 500L), provider.trashed)
+    }
+
+    @Test fun manualRecycleRemovesExpiryAndPreservesTheRecording() = runBlocking {
+        val saved = recording("manual")
+        val ticket = RecordingExpiry.enroll(context, saved, 7)
+        RecordingExpiry.recycle(context, saved, ticket.id)
+        assertFalse(RecordingExpiry.forget(context, saved, ticket.id))
+        RecordingExpiry.clean(context, Long.MAX_VALUE)
+        assertTrue(provider.sizes.isEmpty())
+        assertEquals(mapOf(saved to 500L), provider.trashed)
+    }
+
+    @Test fun defaultFolderUsesContactLabelWhenPresent() {
+        fun path(contact: EnrichedCallData) = RecordingFileNameFormatter.formatFileName(
+            context, contact, RecordingCodec.OPUS
+        ).substringBeforeLast('/')
+        assertEquals("adhoc sales client/Alex", path(caller.copy(callerName = "Alex", contactLabel = "adhoc sales client")))
+        assertEquals("Work_Sales/Alex", path(caller.copy(callerName = "Alex", contactLabel = "Work/Sales")))
+        assertEquals("Alex", path(caller.copy(callerName = "Alex")))
+        assertEquals(caller.getBestNumber(), path(caller))
+        val prefs = AppPreferences(context)
+        prefs.setFileNameTemplate("{date}_{direction}_{phone_number}")
+        assertEquals("{date}_{direction}_{phone_number}", prefs.getFileNameTemplate())
     }
 
     @Test fun pendingRecordingsRestoreTheJobAndKeepTargetsTheRightNotification() {
@@ -126,6 +148,7 @@ class RecordingExpiryTest {
 
     private class RecordingProvider : ContentProvider() {
         val sizes = mutableMapOf<Uri, Long>()
+        val trashed = mutableMapOf<Uri, Long>()
         var offline = false
 
         override fun onCreate() = true
@@ -138,15 +161,12 @@ class RecordingExpiryTest {
             }
         }
 
-        override fun call(method: String, arg: String?, extras: Bundle?): Bundle {
-            check(method == "android:deleteDocument")
-            val uri = requireNotNull(extras?.getParcelable("uri", Uri::class.java))
-            check(sizes.remove(uri) != null)
-            return Bundle.EMPTY
-        }
-
         override fun insert(uri: Uri, values: ContentValues?): Uri = error("unused")
         override fun delete(uri: Uri, selection: String?, selectionArgs: Array<out String>?) = error("unused")
-        override fun update(uri: Uri, values: ContentValues?, selection: String?, selectionArgs: Array<out String>?) = error("unused")
+        override fun update(uri: Uri, values: ContentValues?, selection: String?, selectionArgs: Array<out String>?): Int {
+            check(values?.getAsInteger("is_trashed") == 1)
+            trashed[uri] = checkNotNull(sizes.remove(uri))
+            return 1
+        }
     }
 }

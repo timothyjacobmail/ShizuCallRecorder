@@ -294,7 +294,7 @@ class RecordingNotificationHelper(private val context: Context) {
         }
         builder
             .addAction(android.R.drawable.ic_menu_share, context.getString(R.string.general_share), sharePendingIntent)
-            .addAction(android.R.drawable.ic_menu_delete, context.getString(R.string.general_delete), deletePendingIntent)
+            .addAction(android.R.drawable.ic_menu_delete, context.getString(R.string.recording_recycle_action), deletePendingIntent)
 
         manager.notify(expiry?.id, POST_RECORDING_FILE_ACTIONS_NOTIFICATION_ID, builder.build())
     }

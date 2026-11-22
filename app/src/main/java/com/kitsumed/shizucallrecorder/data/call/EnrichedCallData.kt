@@ -12,6 +12,10 @@ import android.content.Context
 import android.net.Uri
 import android.os.Parcelable
 import android.provider.ContactsContract
+import android.provider.ContactsContract.CommonDataKinds.GroupMembership
+import android.provider.ContactsContract.Data
+import android.provider.ContactsContract.Groups
+import android.provider.ContactsContract.PhoneLookup
 import com.kitsumed.shizucallrecorder.system.permissions.PermissionChecks
 import com.kitsumed.shizucallrecorder.utils.AppLogger
 import com.kitsumed.shizucallrecorder.utils.PhoneNumberManager
@@ -38,7 +42,8 @@ data class EnrichedCallData(
     val callerName: String? = null,
     val packageName: String? = null,
     val isCallAudioVoIpBased: Boolean = false,
-    val contactLookupKey: String? = null
+    val contactLookupKey: String? = null,
+    val contactLabel: String? = null
 ) : Parcelable {
 
     /**
@@ -57,7 +62,7 @@ data class EnrichedCallData(
          * Attempts to enrich the provided RawCallData with additional information.
          */
         suspend fun enrichMetadata(context: Context, base: RawCallData): EnrichedCallData =
-            withContext(Dispatchers.Default) {
+            withContext(Dispatchers.IO) {
                 val raw = base.rawPhoneNumber
 
                 // Blank phone number is a common occurrence (ex: anonymous caller, third-party VoIP apps)
@@ -73,7 +78,8 @@ data class EnrichedCallData(
                 }
 
                 val contact = lookupContact(context, raw)
-                val callerName = base.osProvidedCallerName?.takeIf { it.isNotBlank() } ?: contact?.first
+                val callerName = contact?.name?.takeIf { it.isNotBlank() } ?: base.osProvidedCallerName
+                val contactLabel = contact?.let { findContactLabel(context, it.id) }
                 val phoneNumberManager = PhoneNumberManager.getInstance(context)
                 val parsedNumber = phoneNumberManager.parsePhoneNumber(raw)
                 // If parsing failed
@@ -84,7 +90,8 @@ data class EnrichedCallData(
                         direction = base.direction,
                         isCrossCountry = true, // If we can't parse the number, we should assume it's cross-country to be safe, since we don't know where it's from.
                         callerName = callerName,
-                        contactLookupKey = contact?.second,
+                        contactLookupKey = contact?.lookupKey,
+                        contactLabel = contactLabel,
                         packageName = base.packageName,
                         isCallAudioVoIpBased = base.isCallAudioVoIpBased,
                     )
@@ -100,22 +107,56 @@ data class EnrichedCallData(
                     direction = base.direction,
                     isCrossCountry = crossCountry,
                     callerName = callerName,
-                    contactLookupKey = contact?.second,
+                    contactLookupKey = contact?.lookupKey,
+                    contactLabel = contactLabel,
                     packageName = base.packageName,
                     isCallAudioVoIpBased = base.isCallAudioVoIpBased,
                 )
             }
 
-        private fun lookupContact(context: Context, phoneNumber: String): Pair<String?, String?>? {
+        private data class AddressBookContact(val id: Long, val name: String?, val lookupKey: String?)
+
+        private fun lookupContact(context: Context, phoneNumber: String): AddressBookContact? {
             if (!PermissionChecks.hasContactsPermission(context)) return null
             val uri = Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI, Uri.encode(phoneNumber))
-            val columns = arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME, ContactsContract.PhoneLookup.LOOKUP_KEY)
+            val columns = arrayOf(PhoneLookup._ID, PhoneLookup.DISPLAY_NAME, PhoneLookup.LOOKUP_KEY)
             return try {
                 context.contentResolver.query(uri, columns, null, null, null)?.use { cursor ->
-                    if (cursor.moveToFirst()) cursor.getString(0) to cursor.getString(1) else null
+                    if (cursor.moveToFirst()) AddressBookContact(cursor.getLong(0), cursor.getString(1), cursor.getString(2)) else null
                 }
             } catch (e: RuntimeException) {
                 AppLogger.w("Contact lookup unavailable", e)
+                null
+            }
+        }
+        // Contacts apps store labels as groups. Exclude system-managed and deleted groups.
+        private fun findContactLabel(context: Context, contactId: Long): String? {
+            return try {
+                val resolver = context.contentResolver
+                val groupIds = resolver.query(
+                    Data.CONTENT_URI, arrayOf(GroupMembership.GROUP_ROW_ID),
+                    "${Data.CONTACT_ID} = ? AND ${Data.MIMETYPE} = ?",
+                    arrayOf(contactId.toString(), GroupMembership.CONTENT_ITEM_TYPE), null
+                )?.use { cursor ->
+                    buildSet {
+                        while (cursor.moveToNext()) add(cursor.getLong(0).toString())
+                    }
+                }.orEmpty()
+                if (groupIds.isEmpty()) return null
+                val placeholders = groupIds.joinToString(",") { "?" }
+                resolver.query(
+                    Groups.CONTENT_URI, arrayOf(Groups.TITLE, Groups.DELETED, Groups.AUTO_ADD, Groups.FAVORITES),
+                    "${Groups._ID} IN ($placeholders)", groupIds.toTypedArray(), null
+                )?.use { cursor ->
+                    buildList {
+                        while (cursor.moveToNext()) {
+                            if (cursor.getInt(1) != 0 || cursor.getInt(2) != 0 || cursor.getInt(3) != 0) continue
+                            cursor.getString(0)?.trim()?.takeIf { it.isNotEmpty() }?.let { add(it) }
+                        }
+                    }.minWithOrNull(compareBy(String.CASE_INSENSITIVE_ORDER) { title: String -> title }.thenBy { it })
+                }
+            } catch (e: RuntimeException) {
+                AppLogger.w("Contact labels unavailable", e)
                 null
             }
         }
